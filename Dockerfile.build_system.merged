@@ -32,22 +32,26 @@ RUN apt update -q -qq && \
 ## https://github.com/choreonoid/choreonoid/commit/5a1dbbfad83f9bc677761c3915e5a4614d559183
 ## https://github.com/choreonoid/choreonoid_ros/commit/28ec82093a439e24c99e310472c5b9f7a95c583a
 WORKDIR /choreonoid_ws
-RUN if [ "${ROS_DISTRO}" == "noetic" -o "${ROS_DISTRO}" == "one" ]; then \
-      wget https://raw.githubusercontent.com/IRSL-tut/irsl_choreonoid/main/config/dot.rosinstall ; \
-    else \
-      wget https://raw.githubusercontent.com/IRSL-tut/irsl_choreonoid/devel_ros2_24.04/config/dot.rosinstall ; \
-    fi
 RUN <<EOF
+if [ "${ROS_DISTRO}" == "noetic" -o "${ROS_DISTRO}" == "one" ]; then
+    wget https://raw.githubusercontent.com/IRSL-tut/irsl_choreonoid/main/config/dot.rosinstall  -O dot.rosinstall
+    CNOID_ROS='stable';
+    IRSL_CNOID_ROS='main';
+else
+    wget https://raw.githubusercontent.com/IRSL-tut/irsl_choreonoid/main/config/dot.ros2install -O dot.rosinstall
+    CNOID_ROS='devel_20260312';
+    IRSL_CNOID_ROS='devel_ros2_24.04';
+fi
 cat <<- _DOC_ >> dot.rosinstall
 ### IRSL settings >>> ###
 - git:
     local-name: choreonoid_ros
     uri: https://github.com/IRSL-tut/choreonoid_ros.git
-    version: stable
+    version: ${CNOID_ROS}
 - git:
     local-name: irsl_choreonoid_ros
     uri: https://github.com/IRSL-tut/irsl_choreonoid_ros.git
-    version: main
+    version: ${IRSL_CNOID_ROS}
 - git:
     local-name: cnoid_cgal
     uri: https://github.com/IRSL-tut/cnoid_cgal.git
@@ -83,7 +87,7 @@ COPY files/cgal_package.xml src/cgal/package.xml
 RUN (cd src/choreonoid/ext; git clone https://github.com/IRSL-tut/robot_assembler_plugin.git)
 
 ## add jupyter_plugin
-RUN (cd src/choreonoid/ext; git clone -b original_execution https://github.com/IRSL-tut/jupyter_plugin.git)
+RUN (cd src/choreonoid/ext; git clone https://github.com/IRSL-tut/jupyter_plugin.git)
 
 RUN apt update -q -qq && \
     src/choreonoid/misc/script/install-requisites-ubuntu-$(lsb_release -s -r).sh && \
@@ -94,6 +98,7 @@ RUN apt update -q -qq && \
     else \
         apt install -q -qq -y python-catkin-tools libreadline-dev ; \
     fi && \
+    apt install -q -qq -y libpulse-dev libsndfile-dev gstreamer1.0-libav libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev && \
     rosdep update -y -q -r && \
     rosdep install -y -q -r --ignore-src --from-path src/choreonoid_ros src/irsl_choreonoid_ros src/cnoid_cgal && \
     apt clean && \
@@ -106,9 +111,9 @@ RUN apt update -q -qq && \
 ### Build using colcon
 #RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --parallel-workers 1 --merge-install --event-handlers console_direct+ desktop_notification- log_command+ status- --packages-up-to irsl_choreonoid"
 RUN if [ "${ROS_DISTRO}" == "noetic" -o "${ROS_DISTRO}" == "one" ]; then \
-    /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && catkin config --cmake-args -DBUILD_TEST=ON -DBUILD_POSE_SEQ_PLUGIN=ON -DBUILD_BULLET_PLUGIN=ON -DBUILD_BALANCER_PLUGIN=ON -DBUILD_MOCAP_PLUGIN=ON && catkin config --install && catkin build irsl_choreonoid irsl_choreonoid_ros cnoid_cgal irsl_sim_environments irsl_detection_msgs irsl_detection_srvs irsl_raspi_controller --no-status --no-notify -p 1" ; \
+    /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && catkin config --cmake-args -DBUILD_TEST=ON -DBUILD_POSE_SEQ_PLUGIN=ON -DBUILD_BULLET_PLUGIN=ON -DBUILD_BALANCER_PLUGIN=ON -DBUILD_MOCAP_PLUGIN=ON -DBUILD_MEDIA_PLUGIN=ON && catkin config --install && catkin build irsl_choreonoid irsl_choreonoid_ros cnoid_cgal irsl_sim_environments irsl_detection_msgs irsl_detection_srvs irsl_raspi_controller --no-status --no-notify -p 1" ; \
     else \
-    /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --parallel-workers 1 --merge-install --event-handlers console_direct+ desktop_notification- log_command+ status- --packages-up-to irsl_choreonoid" ; \
+    /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --parallel-workers 1 --merge-install --event-handlers console_direct+ desktop_notification- log_command+ status- --packages-up-to irsl_choreonoid_ros" ; \
     fi
 
 ADD files/kernels /jupyter/kernels
@@ -126,6 +131,9 @@ RUN  mkdir -p /ros_home/.jupyter/lab/user-settings/\@jupyterlab/completer-extens
     "autoCompletion": false\n\
 }' >> /ros_home/.jupyter/lab/user-settings/\@jupyterlab/completer-extension/manager.jupyterlab-settings && \
      chmod -R a+rwx /ros_home/.jupyter
+
+## add alias
+RUN echo "alias jcnoid='jupyter console --kernel=irsl_choreonoid'" >> /irsl_entryrc
 
 ENV PATH=$PATH:/user_scripts
 ENV JUPYTER_PATH=/jupyter
